@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+model Conversation {
+  id              String    @id @default(uuid())
+  userPhone       String    @unique @map("user_phone")
+  state           String    // NORMAL, NEEDS_YEAR, NEEDS_TRIM, ESCALATED
+  lastDetected    Json?     @map("last_detected")
+  pendingTicketId String?   @map("pending_ticket_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  tickets         Ticket[]
+
+  @@map("conversations")
+}
+
+// Deprecated in favor of Vehicle, kept for backward compatibility if needed, or we can drop it.
+// For now, let's keep it but user requested refactor. The prompt says "refactor the model to represent better this CSV".
+// I will keep 'Car' for simplicity of existing code (so it compiles) but add new models.
+model Car {
+  id             String   @id @default(uuid())
+  make           String
+  model          String
+  trim           String?
+  yearFrom       Int?     @map("year_from")
+  yearTo         Int?     @map("year_to")
+  engineCode     String?  @map("engine_code")
+  engineDesc     String?  @map("engine_desc")
+  displacementCc Int?     @map("displacement_cc")
+  hp             Int?
+  torqueNm       Int?     @map("torque_nm")
+  turbo          Boolean?
+  fuelType       String?  @map("fuel_type")
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  qaEntries      QaEntry[]
+  tickets        Ticket[]
+
+  @@index([make, model])
+  @@index([make, model, trim])
+  @@map("cars")
+}
+
+model Vehicle {
+  id             String   @id @default(uuid())
+  type           String?
+  brand          String
+  model          String
+  versionText    String?  @map("version_text")
+  engineName     String?  @map("engine_name")
+  engineTypeCode String?  @map("engine_type_code")
+  fuel           String?
+  powerPs        Int?     @map("power_ps")
+  powerKw        Int?     @map("power_kw")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  offers         VehicleEcuOffer[]
+
+  @@unique([brand, model, versionText, engineName, engineTypeCode, fuel], name: "vehicle_unique_idx")
+  @@index([brand, model])
+  @@index([engineTypeCode])
+  @@map("vehicles")
+}
+
+model Ecu {
+  id        String   @id @default(uuid())
+  maker     String?
+  mcuType   String?  @map("mcu_type")
+  ecuModel  String?  @map("ecu_model")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  offers    VehicleEcuOffer[]
+
+  @@unique([maker, mcuType, ecuModel], name: "ecu_unique_idx")
+  @@map("ecus")
+}
+
+model VehicleEcuOffer {
+  id              String   @id @default(uuid())
+  toolCode        String?  @map("tool_code")
+  connectionModes String[] @map("connection_modes")
+  priceText       String?  @map("price_text")
+  vehicleId       String   @map("vehicle_id")
+  ecuId           String   @map("ecu_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id])
+  ecu             Ecu      @relation(fields: [ecuId], references: [id])
+
+  @@unique([toolCode, vehicleId, ecuId], name: "offer_unique_idx")
+  @@map("vehicle_ecu_offers")
+}
+
+model QaEntry {
+  id                String   @id @default(uuid())
+  scopeType         String   @map("scope_type") // CAR, ENGINE, MODEL, GENERIC
+  scopeId           String?  @map("scope_id")
+  intent            String
+  questionCanonical String   @map("question_canonical")
+  answer            String
+  tags              String[]
+  status            String   // DRAFT, VERIFIED
+  createdBy         String   @map("created_by") // SYSTEM, EXPERT
+  sourceTicketId    String?  @map("source_ticket_id")
+  version           Int      @default(1)
+  replacedBy        String?  @map("replaced_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  
+  // Vector support for semantic search
+  questionEmbedding Unsupported("vector(1536)")? @map("question_embedding")
+
+  sourceTicket      Ticket?  @relation(fields: [sourceTicketId], references: [id])
+  car               Car?     @relation(fields: [scopeId], references: [id]) 
+
+  @@map("qa_entries")
+}
+
+model Ticket {
+  id              String   @id @default(uuid())
+  conversationId  String   @map("conversation_id")
+  userPhone       String   @map("user_phone")
+  expertPhone     String   @map("expert_phone")
+  questionRaw     String   @map("question_raw")
+  detectedCarId   String?  @map("detected_car_id")
+  status          String   // OPEN, ANSWERED, CLOSED
+  expertAnswerRaw String?  @map("expert_answer_raw")
+  finalAnswerSent String?  @map("final_answer_sent")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  detectedCar     Car?         @relation(fields: [detectedCarId], references: [id])
+  qaEntries       QaEntry[]
+
+  @@map("tickets")
+}
+
+model OutboundMessage {
+  id                    String   @id @default(uuid())
+  toPhone               String   @map("to_phone")
+  channel               String   // EXPERT_WHATSAPP, USER_WHATSAPP
+  text                  String
+  relatedTicketId       String?  @map("related_ticket_id")
+  relatedConversationId String?  @map("related_conversation_id")
+  status                String   // PENDING, SENT
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("outbound_messages")
+}

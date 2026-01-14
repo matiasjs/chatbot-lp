@@ -1,50 +1,98 @@
-# WhatsApp Car Knowledge Bot
+# Chatbot-LP
+
+Unified NestJS application handling both the core chatbot logic and WhatsApp Cloud API integration.
+
+## Architecture
+
+This was previously a multi-repo setup but has been consolidated.
+- **Main App (NestJS)**: Handles HTTP requests, Webhooks, API, and DB interactions.
+- **Port**: Defaults to `3000`.
 
 ## Setup
 
-1. **Environment Variables**:
-   Copy `.env.example` to `.env` (already done) and set `OPENAI_API_KEY`.
-   
-2. **Docker**:
+1. **Install Dependencies**
    ```bash
-   docker-compose up -d
+   npm install
    ```
 
-3. **Database**:
-   Run migrations and seed:
+2. **Environment Variables**
+   Copy `.env.example` to `.env` and fill in the values.
    ```bash
-   npx prisma migrate dev --name init
-   npx prisma db seed
+   cp .env.example .env
+   ```
+   **Required for WhatsApp:**
+   - `WABA_VERIFY_TOKEN`: Token you set in Meta App Dashboard.
+   - `WABA_ACCESS_TOKEN`: System User Token or Permanent Token.
+   - `WABA_PHONE_NUMBER_ID`: The ID of the WhatsApp phone number.
+
+3. **Database**
+   ```bash
+   npm run db:migrate
    ```
 
-4. **Run Dev**:
-   ```bash
-   npm run start:dev
-   ```
+## Running the App
 
-## API Endpoints (Simulation)
+```bash
+# Development (Watch mode)
+npm run start:dev
 
-### 1. Inbound Message (User)
-**POST** `http://localhost:3000/api/v1/channels/whatsapp/inbound`
+# Production
+npm run start:prod
+```
+
+## WhatsApp Integration
+
+The app exposes endpoints for WhatsApp Cloud API webhooks.
+
+### Endpoints
+
+- `GET /webhooks/whatsapp`: Webhook verification (used by Meta).
+- `POST /webhooks/whatsapp`: Receives message events.
+- `POST /dev/whatsapp/webhook`: **Dev-Only**. Simulates a webhook event without using Meta.
+
+### Local Development (Postman)
+
+You can test the bot logic locally using the Dev endpoint.
+
+**URL**: `POST http://localhost:3000/dev/whatsapp/webhook`
+
+**Payload Example (Text)**:
 ```json
 {
-  "fromPhone": "5491112345678",
-  "text": "Hola, qué motor tiene el Golf GTI 2019?"
+  "object": "whatsapp_business_account",
+  "entry": [{
+    "changes": [{
+      "value": {
+        "messages": [{
+          "from": "5491100000000",
+          "type": "text",
+          "text": { "body": "AUDIT_START" }
+        }]
+      }
+    }]
+  }]
 }
 ```
 
-### 2. View Pending Expert Messages
-**GET** `http://localhost:3000/api/v1/outbound/pending`
-
-### 3. Expert Reply
-**POST** `http://localhost:3000/api/v1/expert/reply`
+**Payload Example (Simulating Media/CSV)**:
 ```json
 {
-  "ticketId": "UUID_FROM_STEP_2",
-  "expertPhone": "5491100000000",
-  "text": "Trae el motor EA888 Gen 3 de 245cv."
+  "object": "whatsapp_business_account",
+  "entry": [{
+    "changes": [{
+      "value": {
+        "messages": [{
+          "from": "5491100000000",
+          "type": "document",
+          "document": {
+            "id": "MEDIA_ID_OR_MOCK",
+            "mime_type": "text/csv",
+            "filename": "data.csv"
+          }
+        }]
+      }
+    }]
+  }]
 }
 ```
-
-### 4. Admin Knowledge
-**GET** `http://localhost:3000/api/v1/knowledge/search?q=motor`
+*Note: In Dev mode, real media download requires a valid ID and WABA access. If you have `DEV_SEND_TO_WABA=false`, you might need to mock the download part in the controller if you want to test fully offline.*

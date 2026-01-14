@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      target: production
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/chatbot_db
+      - NODE_ENV=production
+      - SEED_ON_START=${SEED_ON_START:-false}
+    depends_on:
+      - postgres
+    entrypoint: ["/bin/sh", "entrypoint.sh"]
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=chatbot_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  wwebjs:
+    build: ./wwebjs-bot
+    restart: unless-stopped
+    environment:
+      - API_BASE_URL=http://api:3000/api/v1
+    volumes:
+      - ./.wwebjs_auth:/usr/src/app/.wwebjs_auth
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
